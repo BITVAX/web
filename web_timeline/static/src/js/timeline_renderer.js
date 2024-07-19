@@ -37,6 +37,7 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
             this.date_stop = params.date_stop;
             this.date_delay = params.date_delay;
             this.colors = params.colors;
+            this.color_field = params.color_field;
             this.fieldNames = params.fieldNames;
             this.default_group_by = params.default_group_by;
             this.dependency_arrow = params.dependency_arrow;
@@ -892,6 +893,9 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
 
             const groupJSONStrings = currentPaths.map((path) => JSON.stringify(path));
 
+            if (this.color_field) {
+                this.color = evt[this.color_field];
+            }
             for (const color of this.colors) {
                 // Ensure evt[color.field] is not an array (e.g. m2o [id, name]) for py.eval
                 let evalValue = evt[color.field];
