@@ -39,6 +39,7 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
             this.date_delay = params.date_delay;
             this.colors = params.colors;
             this.color_field = params.color_field;
+            this.readonly_field = params.readonly_field;
             this.fieldNames = params.fieldNames;
             this.default_group_by = params.default_group_by;
             this.dependency_arrow = params.dependency_arrow;
@@ -938,6 +939,9 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
                     r.end = date_stop;
                 }
                 r_list.push(r);
+            }
+            if (this.readonly_field && evt[this.readonly_field]) {
+                r_list.forEach((item) => (item.editable = false));
             }
             // Reset color for next event
             this.color = null;
