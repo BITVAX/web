@@ -112,6 +112,7 @@ odoo.define("web_timeline.TimelineView", function (require) {
             this.rendererParams.can_create = toBoolDefaultTrue(attrs.create);
             this.rendererParams.can_update = toBoolDefaultTrue(attrs.edit);
             this.rendererParams.can_delete = toBoolDefaultTrue(attrs.delete);
+            this.rendererParams.can_update_group = toBoolDefaultTrue(attrs.edit_group);
             this.rendererParams.date_start = date_start;
             this.rendererParams.date_stop = date_stop;
             this.rendererParams.date_delay = date_delay;
