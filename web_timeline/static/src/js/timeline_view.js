@@ -76,7 +76,7 @@ odoo.define("web_timeline.TimelineView", function (require) {
             );
             fieldNames = _.union(fieldNames, archFieldNames);
             if (attrs.readonly_field) {
-                fieldNames.push(attrs.color_field);
+                fieldNames.push(attrs.readonly_field);
             }
             const readonly_field = attrs.readonly_field;
 
