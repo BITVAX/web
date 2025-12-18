@@ -112,6 +112,12 @@ odoo.define("web_timeline.TimelineView", function (require) {
 
             const mode = attrs.mode || attrs.default_window || "fit";
             const min_height = attrs.min_height || 300;
+            const all_day = attrs.all_day || false;
+            const day_mode = utils.toBoolElse(attrs.day_mode, false);
+
+            if (all_day && !fieldNames.includes(all_day)) {
+                fieldNames.push(all_day);
+            }
 
             if (!isNullOrUndef(attrs.quick_create_instance)) {
                 this.quick_create_instance = "instance." + attrs.quick_create_instance;
@@ -142,6 +148,8 @@ odoo.define("web_timeline.TimelineView", function (require) {
             this.rendererParams.min_height = min_height;
             this.rendererParams.dependency_arrow = dependency_arrow;
             this.rendererParams.fields = fields;
+            this.rendererParams.all_day = all_day;
+            this.rendererParams.day_mode = day_mode;
             this.loadParams.modelName = this.modelName;
             this.loadParams.fieldNames = fieldNames;
             this.loadParams.default_group_by = attrs.default_group_by;
@@ -149,12 +157,14 @@ odoo.define("web_timeline.TimelineView", function (require) {
             this.controllerParams.date_start = date_start;
             this.controllerParams.date_stop = date_stop;
             this.controllerParams.date_delay = date_delay;
+            this.controllerParams.day_mode = day_mode;
             this.controllerParams.actionContext = action.context;
             this.withSearchPanel = false;
         },
 
         _preapre_vis_timeline_options: function (attrs) {
-            return {
+            const day_mode = utils.toBoolElse(attrs.day_mode, false);
+            const options = {
                 groupOrder: "order",
                 orientation: {axis: "both", item: "top"},
                 selectable: true,
@@ -164,6 +174,35 @@ odoo.define("web_timeline.TimelineView", function (require) {
                 margin: attrs.margin ? JSON.parse(attrs.margin) : {item: 2},
                 zoomKey: attrs.zoomKey || "ctrlKey",
             };
+
+            // Day mode: configure vis-timeline for day-only granularity
+            if (day_mode) {
+                // Snap to start of day when dragging/creating events
+                options.snap = function (date) {
+                    const d = new Date(date);
+                    d.setHours(0, 0, 0, 0);
+                    return d;
+                };
+                // Limit zoom to days (no hours visible)
+                options.zoomMin = 1000 * 60 * 60 * 24;       // 1 day in ms
+                options.zoomMax = 1000 * 60 * 60 * 24 * 365; // 365 days in ms
+                // Configure time axis to show days
+                options.timeAxis = {scale: "day", step: 1};
+                // Format labels for day view
+                options.format = {
+                    minorLabels: {
+                        day: "D",
+                        weekday: "ddd D",
+                    },
+                    majorLabels: {
+                        day: "MMMM YYYY",
+                        week: "MMMM YYYY",
+                        month: "YYYY",
+                    },
+                };
+            }
+
+            return options;
         },
 
         /**

@@ -45,6 +45,8 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
             this.dependency_arrow = params.dependency_arrow;
             this.modelClass = params.view.model;
             this.fields = params.fields;
+            this.all_day = params.all_day;
+            this.day_mode = params.day_mode;
 
             this.timeline = false;
             this.initial_data_loaded = false;
@@ -772,33 +774,34 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
             let date_start = new moment();
             let date_stop = null;
 
-            const date_delay = evt[this.date_delay] || false,
-                all_day = this.all_day ? evt[this.all_day] : false;
+            const date_delay = evt[this.date_delay] || false;
 
-            if (all_day) {
-                date_start = time.auto_str_to_date(
-                    evt[this.date_start].split(" ")[0],
-                    "start"
-                );
-                if (this.no_period) {
-                    date_stop = date_start;
-                } else {
-                    date_stop = this.date_stop
-                        ? time.auto_str_to_date(
-                              evt[this.date_stop].split(" ")[0],
-                              "stop"
-                          )
-                        : null;
-                }
+            // auto_str_to_date handles UTC→local conversion correctly for both all_day and regular events
+            // DO NOT use .split(" ")[0] as it extracts the UTC day instead of the local day
+            date_start = time.auto_str_to_date(evt[this.date_start]);
+            if (this.no_period) {
+                date_stop = date_start;
+            } else if (this.date_stop) {
+                date_stop = time.auto_str_to_date(evt[this.date_stop]);
             } else {
-                date_start = time.auto_str_to_date(evt[this.date_start]);
-                date_stop = this.date_stop
-                    ? time.auto_str_to_date(evt[this.date_stop])
-                    : null;
+                date_stop = null;
             }
 
             if (!date_stop && date_delay) {
                 date_stop = date_start.clone().add(date_delay, "hours").toDate();
+            }
+
+            // Day mode: normalize dates to start/end of day for display
+            if (this.day_mode) {
+                // Normalize start to beginning of day
+                if (date_start) {
+                    date_start = moment(date_start).startOf("day").toDate();
+                }
+                // Normalize stop to end of day + 1ms (vis.js semi-open range)
+                // This ensures the event visually covers the entire end day
+                if (date_stop) {
+                    date_stop = moment(date_stop).startOf("day").add(1, "day").toDate();
+                }
             }
 
             return [date_start, date_stop];
@@ -1018,6 +1021,27 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
         },
 
         /**
+         * Fix vis.js semi-open range convention.
+         * vis.js sends end = next day 00:00:00, we adjust to previous day 23:59:59.
+         * Applies to all_day events and day_mode views.
+         *
+         * @param {Object} item - Timeline item with start/end dates
+         * @private
+         */
+        _fixSemiOpenRange: function (item) {
+            if (!item.end) return;
+
+            // Check if we need to fix: all_day event OR day_mode view
+            const isAllDay = this.all_day && item.evt ? item.evt[this.all_day] : false;
+            if (!isAllDay && !this.day_mode) return;
+
+            const endMoment = moment(item.end);
+            if (endMoment.hour() === 0 && endMoment.minute() === 0 && endMoment.second() === 0) {
+                item.end = endMoment.subtract(1, "second").toDate();
+            }
+        },
+
+        /**
          * Trigger onMove.
          *
          * @param {Object} item
@@ -1025,6 +1049,7 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
          * @private
          */
         on_move: function (item, callback) {
+            this._fixSemiOpenRange(item);
             this._trigger(item, callback, "onMove");
         },
 
@@ -1047,6 +1072,7 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
          * @private
          */
         on_add: function (item, callback) {
+            this._fixSemiOpenRange(item);
             this._trigger(item, callback, "onAdd");
         },
 

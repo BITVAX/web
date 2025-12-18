@@ -29,6 +29,7 @@ export default AbstractController.extend({
         this.date_start = params.date_start;
         this.date_stop = params.date_stop;
         this.date_delay = params.date_delay;
+        this.day_mode = params.day_mode;
         this.context = params.actionContext;
         this.moveQueue = [];
         this.debouncedInternalMove = _.debounce(this.internalMove, 0);
@@ -276,24 +277,64 @@ export default AbstractController.extend({
         const fields = this.renderer.fields;
         const event_start = item.start;
         const event_end = item.end;
+        let group = false;
+        if (item.group !== -1) {
+            group = item.group;
+        }
         let data = {};
-        // In case of a move event, the date_delay stay the same,
-        // only date_start and stop must be updated
-        data[this.date_start] = time.auto_date_to_str(
-            event_start,
-            fields[this.date_start].type
-        );
-        if (this.date_stop) {
-            // In case of instantaneous event, item.end is not defined
-            if (event_end) {
-                data[this.date_stop] = time.auto_date_to_str(
-                    event_end,
-                    fields[this.date_stop].type
-                );
+
+        // Day mode: normalize dates for storage
+        if (this.day_mode) {
+            const startFieldType = fields[this.date_start].type;
+            const stopFieldType = this.date_stop ? fields[this.date_stop].type : null;
+
+            if (startFieldType === "datetime") {
+                // For datetime fields: start at 00:00:00
+                data[this.date_start] = moment(event_start)
+                    .startOf("day")
+                    .utc()
+                    .format("YYYY-MM-DD HH:mm:ss");
             } else {
+                // For date fields: just the date
+                data[this.date_start] = moment(event_start).format("YYYY-MM-DD");
+            }
+
+            if (this.date_stop && event_end) {
+                if (stopFieldType === "datetime") {
+                    // For datetime fields: end at 23:59:59
+                    data[this.date_stop] = moment(event_end)
+                        .startOf("day")
+                        .add(23, "hours")
+                        .add(59, "minutes")
+                        .add(59, "seconds")
+                        .utc()
+                        .format("YYYY-MM-DD HH:mm:ss");
+                } else {
+                    // For date fields: just the date
+                    data[this.date_stop] = moment(event_end).format("YYYY-MM-DD");
+                }
+            } else if (this.date_stop) {
                 data[this.date_stop] = data[this.date_start];
             }
+        } else {
+            // Original behavior: use auto_date_to_str
+            data[this.date_start] = time.auto_date_to_str(
+                event_start,
+                fields[this.date_start].type
+            );
+            if (this.date_stop) {
+                // In case of instantaneous event, item.end is not defined
+                if (event_end) {
+                    data[this.date_stop] = time.auto_date_to_str(
+                        event_end,
+                        fields[this.date_stop].type
+                    );
+                } else {
+                    data[this.date_stop] = data[this.date_start];
+                }
+            }
         }
+
         if (this.date_delay && event_end) {
             const diff_seconds = Math.round(
                 (event_end.getTime() - event_start.getTime()) / 1000
@@ -393,22 +434,62 @@ export default AbstractController.extend({
      */
     _onAdd: function (event) {
         const item = event.data.item;
+        const fields = this.renderer.fields;
         // Initialize default values for creation
         const default_context = {};
         default_context["default_".concat(this.date_start)] = item.start;
         if (this.date_delay) {
             default_context["default_".concat(this.date_delay)] = 1;
         }
-        if (this.date_start) {
-            default_context["default_".concat(this.date_start)] = moment(item.start)
-                .utc()
-                .format("YYYY-MM-DD HH:mm:ss");
+
+        // Day mode: normalize dates for creation
+        if (this.day_mode) {
+            const startFieldType = fields[this.date_start].type;
+            const stopFieldType = this.date_stop ? fields[this.date_stop].type : null;
+
+            if (this.date_start) {
+                if (startFieldType === "datetime") {
+                    // For datetime fields: start at 00:00:00
+                    default_context["default_".concat(this.date_start)] = moment(item.start)
+                        .startOf("day")
+                        .utc()
+                        .format("YYYY-MM-DD HH:mm:ss");
+                } else {
+                    // For date fields: just the date
+                    default_context["default_".concat(this.date_start)] = moment(item.start)
+                        .format("YYYY-MM-DD");
+                }
+            }
+            if (this.date_stop && item.end) {
+                if (stopFieldType === "datetime") {
+                    // For datetime fields: end at 23:59:59
+                    default_context["default_".concat(this.date_stop)] = moment(item.end)
+                        .startOf("day")
+                        .add(23, "hours")
+                        .add(59, "minutes")
+                        .add(59, "seconds")
+                        .utc()
+                        .format("YYYY-MM-DD HH:mm:ss");
+                } else {
+                    // For date fields: just the date
+                    default_context["default_".concat(this.date_stop)] = moment(item.end)
+                        .format("YYYY-MM-DD");
+                }
+            }
+        } else {
+            // Original behavior
+            if (this.date_start) {
+                default_context["default_".concat(this.date_start)] = moment(item.start)
+                    .utc()
+                    .format("YYYY-MM-DD HH:mm:ss");
+            }
+            if (this.date_stop && item.end) {
+                default_context["default_".concat(this.date_stop)] = moment(item.end)
+                    .utc()
+                    .format("YYYY-MM-DD HH:mm:ss");
+            }
         }
-        if (this.date_stop && item.end) {
-            default_context["default_".concat(this.date_stop)] = moment(item.end)
-                .utc()
-                .format("YYYY-MM-DD HH:mm:ss");
-        }
+
         if (this.date_delay && this.date_start && this.date_stop && item.end) {
             default_context["default_".concat(this.date_delay)] =
                 (moment(item.end) - moment(item.start)) / 3600000;
