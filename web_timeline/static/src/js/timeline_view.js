@@ -154,6 +154,10 @@ odoo.define("web_timeline.TimelineView", function (require) {
             this.loadParams.fieldNames = fieldNames;
             this.loadParams.default_group_by = attrs.default_group_by;
             this.controllerParams.open_popup_action = open_popup_action;
+            this.controllerParams.use_formview_action = utils.toBoolElse(
+                attrs.use_formview_action,
+                false
+            );
             this.controllerParams.date_start = date_start;
             this.controllerParams.date_stop = date_stop;
             this.controllerParams.date_delay = date_delay;

@@ -26,6 +26,7 @@ export default AbstractController.extend({
     init: function (parent, model, renderer, params) {
         this._super.apply(this, arguments);
         this.open_popup_action = params.open_popup_action;
+        this.use_formview_action = params.use_formview_action;
         this.date_start = params.date_start;
         this.date_stop = params.date_stop;
         this.date_delay = params.date_delay;
@@ -239,6 +240,26 @@ export default AbstractController.extend({
      * @returns {void}
      */
     openItem: function (item_id, is_editable) {
+        if (this.use_formview_action) {
+            // Delegate destination resolution to the model's get_formview_action
+            // method so that models can redirect navigation to a different
+            // record (e.g. a parent or a referenced target). On failure fall
+            // back to the legacy behavior.
+            return this._rpc({
+                model: this.model.modelName,
+                method: "get_formview_action",
+                args: [[item_id]],
+                context: this.getSession().user_context,
+            }).then((action) => {
+                if (!action) {
+                    return;
+                }
+                if (is_editable) {
+                    action.target = "current";
+                }
+                return this.do_action(action);
+            });
+        }
         if (this.open_popup_action) {
             const options = {
                 resModel: this.model.modelName,

@@ -28,6 +28,8 @@ the possible attributes for the tag:
 +--------------------+-----------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | dependency_arrow   | No        | Set this attribute to a x2many field to draw arrows between the records referenced in the x2many field.                                                                                                                                                                   |
 +--------------------+-----------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| use_formview_action| No        | When set to true, ``openItem`` calls the model's ``get_formview_action`` via RPC and executes the returned action, allowing models to override the navigation destination. Default false keeps the legacy behavior (open the item's own form).                           |
++--------------------+-----------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
 Optionally you can declare a custom template, which will be used to render the
 timeline items. You have to name the template 'timeline-item'.
