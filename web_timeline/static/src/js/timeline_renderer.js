@@ -230,8 +230,11 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
 
             this.timeline = new vis.Timeline(this.$timeline.get(0), {}, this.options);
             this.timeline.on("doubleClick", this.on_timeline_click);
-            if (!this.options.onUpdate) {
-                // In read-only mode, catch double-clicks this way.
+            if (!this.options.onUpdate || this.readonly_field) {
+                // In read-only mode, or when readonly_field is used to mark
+                // individual items as non-editable, listen at the Core level
+                // for double-clicks so per-item readonly bars can be opened
+                // instead of the click falling through to onAdd.
                 this.timeline.on("doubleClick", this.on_timeline_double_click);
             }
             const group_bys = this.arch.attrs.default_group_by.split(",");
@@ -998,15 +1001,26 @@ odoo.define("web_timeline.TimelineRenderer", function (require) {
          */
         on_timeline_double_click: function (e) {
             this.on_timeline_click(e);
-            if (e.what === "item" && e.item !== -1) {
-                this._trigger(
-                    e.item,
-                    () => {
-                        // No callback
-                    },
-                    "onItemDoubleClick"
-                );
+            if (e.what !== "item" || e.item === -1) {
+                return;
             }
+            if (this.readonly_field && this.options.onUpdate) {
+                // When readonly_field is set AND the timeline is not globally
+                // readonly, only fire onItemDoubleClick for items that are
+                // individually readonly — editable items already go through
+                // the onUpdate path and must not double-fire.
+                const item = this.timeline.itemsData.get(e.item);
+                if (!item || item.editable !== false) {
+                    return;
+                }
+            }
+            this._trigger(
+                e.item,
+                () => {
+                    // No callback
+                },
+                "onItemDoubleClick"
+            );
         },
 
         /**
