@@ -13,6 +13,7 @@ import {
 } from "@odoo/owl";
 import {TimelineCanvas} from "./timeline_canvas.esm";
 import {_t} from "@web/core/l10n/translation";
+import {escape} from "@web/core/utils/strings";
 import {loadBundle} from "@web/core/assets";
 import {renderToString} from "@web/core/utils/render";
 import {useService} from "@web/core/utils/hooks";
@@ -191,8 +192,8 @@ export class TimelineRenderer extends Component {
             this.options.onUpdate = this.on_update.bind(this);
             // Drag items horizontally
             this.options.editable.updateTime = true;
-            // Drag items from one group to another
-            this.options.editable.updateGroup = true;
+            // Drag items from one group to another, unless edit_group="false"
+            this.options.editable.updateGroup = this.model.canUpdateGroup;
             if (this.model.canCreate) {
                 this.options.onAdd = this.on_add.bind(this);
                 // Add new items by double tapping
@@ -217,8 +218,9 @@ export class TimelineRenderer extends Component {
         };
         this.timeline = new vis.Timeline(this.canvasRef.el, {}, this.options);
         this.timeline.on("click", this.on_timeline_click.bind(this));
-        if (!this.options.onUpdate) {
-            // In read-only mode, catch double-clicks this way.
+        if (!this.options.onUpdate || this.params.readonly_field) {
+            // In read-only mode, and for the items locked by readonly_field,
+            // there is no onUpdate: catch double-clicks this way.
             this.timeline.on("doubleClick", this.on_timeline_double_click.bind(this));
         }
         this.$centerContainer = this.timeline.dom.centerContainer;
@@ -392,9 +394,35 @@ export class TimelineRenderer extends Component {
                     });
                     seq += 1;
                 }
+            } else {
+                // Simple values (char, selection, integer...): one row per value
+                const group_id = this.model.get_event_group(evt);
+                if (group_id !== -1 && !groups.some((gr) => gr.id === group_id)) {
+                    groups.push({
+                        id: group_id,
+                        content: this.get_group_label(grouped_field, group_id),
+                        order: seq,
+                    });
+                    seq += 1;
+                }
             }
         }
         return groups;
+    }
+
+    /**
+     * Label of the row of a simple (non relational) group value.
+     *
+     * @param {String} field_name
+     * @param {String|Number} value
+     * @returns {String}
+     */
+    get_group_label(field_name, value) {
+        const field = this.fields[field_name];
+        const option =
+            field.type === "selection" &&
+            field.selection.find(([key]) => key === value);
+        return escape(option ? option[1] : String(value));
     }
 
     async get_m2m_grouping_datas(model, group_name) {
@@ -428,9 +456,25 @@ export class TimelineRenderer extends Component {
      * @private
      */
     on_timeline_double_click(e) {
-        if (e.what === "item" && e.item !== -1) {
-            this.props.onItemDoubleClick(e);
+        if (e.what !== "item" || e.item === -1) {
+            return;
         }
+        if (this.options.onUpdate && !this.is_readonly_item(e.item)) {
+            // Editable items are already opened by vis-timeline through onUpdate
+            return;
+        }
+        this.props.onItemDoubleClick(e);
+    }
+
+    /**
+     * Whether an item has been locked by readonly_field.
+     *
+     * @param {Number|String} item_id
+     * @returns {Boolean}
+     */
+    is_readonly_item(item_id) {
+        const item = this.timeline.itemsData.get(item_id);
+        return Boolean(item) && item.editable === false;
     }
 
     /**
@@ -473,6 +517,14 @@ export class TimelineRenderer extends Component {
      * @private
      */
     on_add(item, callback) {
+        // Vis-timeline adds an item on every double tap that no editable item
+        // catches, also on a readonly one. touchParams.item is the item under
+        // the pointer when the tap began: there the gesture opens the item.
+        const touched = this.timeline.itemSet.touchParams.item;
+        if (touched && touched.data.editable === false) {
+            callback(null);
+            return;
+        }
         this.props.onAdd(item, callback);
     }
 }

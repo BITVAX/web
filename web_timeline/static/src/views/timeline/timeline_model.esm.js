@@ -87,18 +87,8 @@ export class TimelineModel extends Model {
      */
     _event_data_transform(record) {
         const [date_start, date_stop] = this._get_event_dates(record);
-        let group = record[this.last_group_bys[0]];
-        if (group && Array.isArray(group) && group.length > 0) {
-            group = group[0];
-        } else {
-            group = -1;
-        }
-        let colorToApply = false;
-        for (const color of this.colors) {
-            if (evaluate(color.ast, record)) {
-                colorToApply = color.color;
-            }
-        }
+        const group = this.get_event_group(record);
+        const colorToApply = this._get_event_color(record);
 
         let content = record.display_name;
         if (this.recordTemplate) {
@@ -112,14 +102,59 @@ export class TimelineModel extends Model {
             order: record.order,
             group: group,
             evt: record,
-            style: `background-color: ${colorToApply};`,
+            style: colorToApply ? `background-color: ${colorToApply};` : "",
         };
         // Only specify range end when there actually is one.
         // ➔ Instantaneous events / those with inverted dates are displayed as points.
         if (date_stop && DateTime.fromISO(date_start) < DateTime.fromISO(date_stop)) {
             timeline_item.end = date_stop.toJSDate();
         }
+        // Readonly_field locks single items: vis-timeline refuses to drag or
+        // resize them, but they can still be opened with a double click.
+        if (this.params.readonly_field && record[this.params.readonly_field]) {
+            timeline_item.editable = false;
+            timeline_item.className = "web_timeline_readonly";
+        }
         return timeline_item;
+    }
+    /**
+     * Timeline group of a record: the id for relational values, the raw value
+     * for simple ones (char, selection, integer...) and -1 when it is empty.
+     *
+     * @param {Object} record
+     * @returns {Number|String}
+     */
+    get_event_group(record) {
+        const value = record[this.last_group_bys[0]];
+        if (Array.isArray(value)) {
+            return value.length > 0 ? value[0] : -1;
+        }
+        if (value === false || value === null || value === undefined || value === "") {
+            return -1;
+        }
+        return value;
+    }
+    /**
+     * Color of a record: the value of color_field, overridden by any matching
+     * expression of the colors attribute (the last one that matches wins).
+     *
+     * @param {Object} record
+     * @returns {String|false}
+     */
+    _get_event_color(record) {
+        let color = false;
+        const field_color = this.params.color_field && record[this.params.color_field];
+        // The value lands in a style attribute: only accept what a CSS color
+        // can contain, so a stray ";" cannot inject other declarations.
+        if (typeof field_color === "string" && /^[\w#(),.%\s-]+$/.test(field_color)) {
+            color = field_color;
+        }
+        for (const rule of this.colors) {
+            if (evaluate(rule.ast, record)) {
+                color = rule.color;
+            }
+        }
+        return color;
     }
     /**
      * Get dates from given event
@@ -143,6 +178,14 @@ export class TimelineModel extends Model {
         }
         if (!date_stop && date_delay) {
             date_stop = date_start.plus({hours: date_delay});
+        }
+        if (this.params.day_mode) {
+            // Whole days: from the start of the first day to the start of the
+            // day after the last one (vis-timeline ranges are semi-open).
+            date_start = date_start.toLocal().startOf("day");
+            if (date_stop) {
+                date_stop = date_stop.toLocal().startOf("day").plus({days: 1});
+            }
         }
 
         return [date_start, date_stop];
@@ -230,5 +273,8 @@ export class TimelineModel extends Model {
     }
     get canEdit() {
         return this.params.canUpdate && this.write_right;
+    }
+    get canUpdateGroup() {
+        return this.canEdit && this.params.canUpdateGroup;
     }
 }

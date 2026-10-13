@@ -7,6 +7,7 @@ import {exprToBoolean} from "@web/core/utils/strings";
 import {parseExpr} from "@web/core/py_js/py";
 import {visitXML} from "@web/core/utils/xml";
 
+const {DateTime} = luxon;
 const MODES = ["day", "week", "month", "fit"];
 
 export class TimelineParseArchError extends Error {}
@@ -22,6 +23,9 @@ export class TimelineArchParser {
             canCreate: true,
             canUpdate: true,
             canDelete: true,
+            canUpdateGroup: true,
+            day_mode: false,
+            use_formview_action: false,
             options: {
                 groupOrder: "order",
                 orientation: {axis: "both", item: "top"},
@@ -118,6 +122,31 @@ export class TimelineArchParser {
                             true
                         );
                     }
+                    if (node.hasAttribute("edit_group")) {
+                        archInfo.canUpdateGroup = exprToBoolean(
+                            node.getAttribute("edit_group"),
+                            true
+                        );
+                    }
+                    if (node.hasAttribute("color_field")) {
+                        archInfo.color_field = node.getAttribute("color_field");
+                    }
+                    if (node.hasAttribute("readonly_field")) {
+                        archInfo.readonly_field = node.getAttribute("readonly_field");
+                    }
+                    if (node.hasAttribute("all_day")) {
+                        archInfo.all_day = node.getAttribute("all_day");
+                    }
+                    if (node.hasAttribute("day_mode")) {
+                        archInfo.day_mode = exprToBoolean(
+                            node.getAttribute("day_mode")
+                        );
+                    }
+                    if (node.hasAttribute("use_formview_action")) {
+                        archInfo.use_formview_action = exprToBoolean(
+                            node.getAttribute("use_formview_action")
+                        );
+                    }
                     break;
                 }
                 case "field": {
@@ -142,6 +171,9 @@ export class TimelineArchParser {
             "default_group_by",
             "progress",
             "date_delay",
+            "color_field",
+            "readonly_field",
+            "all_day",
             archInfo.default_group_by,
         ];
 
@@ -162,8 +194,29 @@ export class TimelineArchParser {
         ) {
             fieldNames.push(archInfo.dependency_arrow);
         }
+        if (archInfo.day_mode) {
+            Object.assign(archInfo.options, this.get_day_mode_options());
+        }
         archInfo.fieldNames = fieldNames;
         return archInfo;
+    }
+    /**
+     * Vis-timeline options for day_mode: items snap to the start of the day
+     * and the axis never zooms below one day.
+     * @returns {Object}
+     */
+    get_day_mode_options() {
+        const one_day = 24 * 60 * 60 * 1000;
+        return {
+            snap: (date) => DateTime.fromJSDate(date).startOf("day").toJSDate(),
+            zoomMin: one_day,
+            zoomMax: 365 * one_day,
+            timeAxis: {scale: "day", step: 1},
+            format: {
+                minorLabels: {day: "D", weekday: "ddd D"},
+                majorLabels: {day: "MMMM YYYY", week: "MMMM YYYY", month: "YYYY"},
+            },
+        };
     }
     /**
      * Parse the colors attribute.

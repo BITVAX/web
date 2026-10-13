@@ -33,10 +33,14 @@ export class TimelineController extends Component {
         this.date_stop = this.props.modelParams.date_stop;
         this.date_delay = this.props.modelParams.date_delay;
         this.open_popup_action = this.props.modelParams.open_popup_action;
+        this.use_formview_action = this.props.modelParams.use_formview_action;
+        this.all_day = this.props.modelParams.all_day;
+        this.day_mode = this.props.modelParams.day_mode;
         this.moveQueue = [];
         this.debouncedInternalMove = useDebounced(this.internalMove, 0);
         this.dialogService = useService("dialog");
         this.actionService = useService("action");
+        this.orm = useService("orm");
     }
     get rendererProps() {
         return {
@@ -62,6 +66,10 @@ export class TimelineController extends Component {
      */
     _onGroupClick(item) {
         const groupField = this.model.last_group_bys[0];
+        if (!this.model.fields[groupField].relation) {
+            // Rows of simple values (char, selection...) have no record to open
+            return;
+        }
         this.actionService.doAction({
             type: "ir.actions.act_window",
             res_model: this.model.fields[groupField].relation,
@@ -100,7 +108,23 @@ export class TimelineController extends Component {
      * @param {Integer} item_id
      * @param {Boolean} is_editable
      */
-    openItem(item_id, is_editable) {
+    async openItem(item_id, is_editable) {
+        if (this.use_formview_action) {
+            // The model decides where its records open (a parent document,
+            // the record an event refers to...) through get_formview_action.
+            const action = await this.orm.call(
+                this.model.model_name,
+                "get_formview_action",
+                [[item_id]]
+            );
+            if (!action) {
+                return;
+            }
+            if (is_editable) {
+                action.target = "current";
+            }
+            return this.actionService.doAction(action);
+        }
         if (this.open_popup_action) {
             const options = {
                 resModel: this.model.model_name,
@@ -132,8 +156,7 @@ export class TimelineController extends Component {
      * @param {Function} callback
      */
     _onMove(item, callback) {
-        const event_start = DateTime.fromJSDate(item.start);
-        const event_end = item.end ? DateTime.fromJSDate(item.end) : false;
+        const [event_start, event_end] = this.get_item_dates(item);
         let group = false;
         if (item.group !== -1) {
             group = item.group;
@@ -157,8 +180,13 @@ export class TimelineController extends Component {
             const diff = event_end.diff(event_start, "hours");
             data[this.date_delay] = diff.hours;
         }
+        // With edit_group="false" items cannot change row: the grouped field
+        // is not written, so a move can never alter it.
         const grouped_field = this.model.last_group_bys[0];
-        if (this.model.fields[grouped_field].type !== "many2many") {
+        if (
+            this.model.canUpdateGroup &&
+            this.model.fields[grouped_field].type !== "many2many"
+        ) {
             data[grouped_field] = group;
         }
         this.moveQueue.push({
@@ -168,6 +196,33 @@ export class TimelineController extends Component {
             callback,
         });
         this.debouncedInternalMove();
+    }
+    /**
+     * Start and end of a moved or added item, as they have to be saved.
+     *
+     * vis-timeline ranges are semi-open: an item covering day D ends at
+     * D+1 00:00. For whole-day items (day_mode, or an all_day record) that end
+     * goes back to the last second of D, or the record would gain a day.
+     * day_mode also stretches the item to whole days.
+     *
+     * @param {Object} item
+     * @returns {Array} [start, end] as DateTime; end is false for points
+     */
+    get_item_dates(item) {
+        let start = DateTime.fromJSDate(item.start);
+        let end = item.end ? DateTime.fromJSDate(item.end) : false;
+        const all_day = Boolean(this.all_day && item.evt && item.evt[this.all_day]);
+        const at_midnight = end && end.toMillis() === end.startOf("day").toMillis();
+        if (at_midnight && (this.day_mode || all_day)) {
+            end = end.minus({seconds: 1});
+        }
+        if (this.day_mode) {
+            start = start.startOf("day");
+            if (end) {
+                end = end.endOf("day").startOf("second");
+            }
+        }
+        return [start, end];
     }
     /**
      * Write enqueued moves to Odoo. After all writes are finished it updates
@@ -221,9 +276,7 @@ export class TimelineController extends Component {
     _onAdd(item, callback) {
         // Initialize default values for creation
         const context = {};
-        let item_start = false,
-            item_end = false;
-        item_start = DateTime.fromJSDate(item.start);
+        const [item_start, item_end] = this.get_item_dates(item);
         context[`default_${this.date_start}`] = this.model.serializeDate(
             this.date_start,
             item_start
@@ -231,8 +284,7 @@ export class TimelineController extends Component {
         if (this.date_delay) {
             context[`default_${this.date_delay}`] = 1;
         }
-        if (this.date_stop && item.end) {
-            item_end = DateTime.fromJSDate(item.end);
+        if (this.date_stop && item_end) {
             context[`default_${this.date_stop}`] = this.model.serializeDate(
                 this.date_stop,
                 item_end
@@ -242,7 +294,7 @@ export class TimelineController extends Component {
             const diff = item_end.diff(item_start, "hours");
             context[`default_${this.date_delay}`] = diff.hours;
         }
-        if (item.group > 0) {
+        if (item.group > 0 || (typeof item.group === "string" && item.group)) {
             context[`default_${this.model.last_group_bys[0]}`] = item.group;
         }
         // Show popup
