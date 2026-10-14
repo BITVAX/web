@@ -31,21 +31,20 @@ export class TimelineModel extends Model {
 
         this.keepLast = new KeepLast();
         onWillStart(async () => {
-            this.write_right = await this.orm.call(
-                this.model_name,
-                "check_access_rights",
-                ["write", false]
-            );
-            this.unlink_right = await this.orm.call(
-                this.model_name,
-                "check_access_rights",
-                ["unlink", false]
-            );
-            this.create_right = await this.orm.call(
-                this.model_name,
-                "check_access_rights",
-                ["create", false]
-            );
+            // On an empty recordset has_access checks the model access rights
+            // (check_access_rights is deprecated since 18.0 and logs a warning)
+            this.write_right = await this.orm.call(this.model_name, "has_access", [
+                [],
+                "write",
+            ]);
+            this.unlink_right = await this.orm.call(this.model_name, "has_access", [
+                [],
+                "unlink",
+            ]);
+            this.create_right = await this.orm.call(this.model_name, "has_access", [
+                [],
+                "create",
+            ]);
         });
     }
     /**
